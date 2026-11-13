@@ -1,0 +1,10 @@
+[Unit]
+Description=Stop fprintd before sleep (crfpmoc cannot close the sensor mid-verify)
+Before=sleep.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/systemctl stop fprintd.service
+
+[Install]
+WantedBy=sleep.target

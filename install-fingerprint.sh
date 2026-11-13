@@ -19,6 +19,9 @@ if [[ "${1:-}" == "--uninstall" ]]; then
   sudo rm -f "$LIBDIR"/libfprint-2.so* "$LIBDIR"/pkgconfig/libfprint-2.pc \
     /usr/local/share/metainfo/org.freedesktop.libfprint.metainfo.xml
   sudo rm -rf /usr/local/include/libfprint-2
+  sudo systemctl disable fprintd-sleep-fix.service 2>/dev/null || true
+  sudo rm -f /etc/systemd/system/fprintd-sleep-fix.service
+  sudo systemctl daemon-reload
   sudo ldconfig
   sudo systemctl restart fprintd || true
   echo "Removed. Ubuntu's stock libfprint is active again."
@@ -48,6 +51,12 @@ meson setup "$BUILD" "$SRC" --wipe --prefix=/usr/local \
 ninja -C "$BUILD"
 sudo ninja -C "$BUILD" install
 sudo ldconfig
+
+# Stop fprintd before suspend: the crfpmoc driver cannot close the sensor
+# while a verify is running, and fprintd is left broken after resume.
+sudo install -m 644 systemd/fprintd-sleep-fix.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable fprintd-sleep-fix.service
 
 echo "fprintd will now load: $(ldconfig -p | grep -m1 'libfprint-2.so.2 ' | awk '{print $NF}')"
 sudo systemctl restart fprintd || true

@@ -86,6 +86,24 @@ general {
 
 Потом `systemctl --user restart hypridle`.
 
+### После выхода из сна сканер не включается
+
+Если перед сном экран уже был заблокирован, DMS ждёт палец. Перед сном
+fprintd пытается закрыть сенсор, но драйвер crfpmoc не умеет делать это
+посреди проверки (`Error closing device after disconnect: The device is still
+busy`). После пробуждения fprintd остаётся сломанным, и DMS сразу получает
+`Authentication service cannot retrieve authentication info`.
+
+Решение: юнит `systemd/fprintd-sleep-fix.service` останавливает fprintd перед
+сном, а после пробуждения DMS запускает его заново. Скрипт установки ставит
+юнит сам. Вручную:
+
+```bash
+sudo install -m 644 systemd/fprintd-sleep-fix.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable fprintd-sleep-fix.service
+```
+
 Смотреть журнал после неудачной попытки:
 
 ```bash
