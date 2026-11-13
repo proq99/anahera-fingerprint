@@ -51,7 +51,46 @@
 Ещё пальцы: `fprintd-enroll -f left-index-finger` и т.д. Сенсор хранит не
 больше 5 отпечатков. Удалить все: `fprintd-delete $USER`.
 
-Отпечаток для `sudo`: `sudo pam-auth-update` → «Fingerprint authentication».
+## Отпечаток для sudo
+
+```bash
+sudo pam-auth-update --enable fprintd
+```
+
+Проверка: `sudo -k && sudo true`, должно попросить приложить палец. Пароль
+спросит после неудачной попытки, через 10 секунд или по Ctrl+C. Включается
+для всего, что использует `common-auth`: `sudo`, `su`, вход в TTY, polkit.
+Выключить: `sudo pam-auth-update --disable fprintd`.
+
+## Если экран блокировки перестал принимать палец
+
+Сканер может занять только одна программа за раз. Если при блокировке
+запускаются два экрана блокировки, второй не получит сенсор. В журнале это
+видно так:
+
+```
+fprintd: ... call method 'Claim' ... Device was already claimed
+```
+
+Пример: после включения отпечатка для sudo hyprlock тоже начинает брать
+сканер (его PAM подключает `common-auth`). Если hypridle запускает hyprlock
+одновременно с экраном DMS, палец на экране DMS не срабатывает. Решение:
+пусть hypridle блокирует через DMS. В `~/.config/hypr/hypridle.conf`:
+
+```
+general {
+    lock_cmd = dms ipc call lock lock
+    ...
+}
+```
+
+Потом `systemctl --user restart hypridle`.
+
+Смотреть журнал после неудачной попытки:
+
+```bash
+journalctl -b --since "-5min" | grep -iE 'fprint|pam'
+```
 
 ## Удаление
 
