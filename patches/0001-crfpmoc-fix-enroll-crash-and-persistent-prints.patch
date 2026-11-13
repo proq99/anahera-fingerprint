@@ -1,0 +1,98 @@
+diff --git a/libfprint/drivers/crfpmoc/crfpmoc.c b/libfprint/drivers/crfpmoc/crfpmoc.c
+index eed034f..fb25300 100644
+--- a/libfprint/drivers/crfpmoc/crfpmoc.c
++++ b/libfprint/drivers/crfpmoc/crfpmoc.c
+@@ -403,7 +403,7 @@ crfpmoc_umockdev_record (FpiDeviceCrfpMoc *self, int res,
+  * to see if a timeout is active.
+  */
+ static gboolean
+-crfpmoc_read_bytes (gpointer user_data)
++crfpmoc_read_bytes (GObject *pollable_stream, gpointer user_data)
+ {
+   g_autoptr(GError) error = NULL;
+   FpiSsm *ssm = user_data;
+@@ -451,7 +451,7 @@ crfpmoc_read_bytes (gpointer user_data)
+       fpi_ssm_mark_failed (ssm,
+                            fpi_device_error_new_msg (FP_DEVICE_ERROR_GENERAL,
+                                                      "Error polling for MKBP event: %s",
+-                                                     error->message));
++                                                     error ? error->message : "unknown error"));
+       return G_SOURCE_REMOVE;
+     }
+ 
+@@ -593,8 +593,9 @@ crfpmoc_eventmask_cb (CrfpMocEcTransfer *transfer, GAsyncResult *res, gpointer u
+   GSource *poll_source = g_pollable_input_stream_create_source (
+     G_POLLABLE_INPUT_STREAM (data->poll_input_stream),
+     fpi_device_get_cancellable (device));
+-  g_source_set_callback (poll_source, crfpmoc_read_bytes, ssm, NULL);
++  g_source_set_callback (poll_source, G_SOURCE_FUNC (crfpmoc_read_bytes), ssm, NULL);
+   data->poll_source = g_source_attach (poll_source, NULL);
++  g_source_unref (poll_source);
+ }
+ 
+ /* Enable device event reporting and queue a callback when there is
+@@ -723,7 +724,8 @@ crfpmoc_clear_storage_cb (CrfpMocEcTransfer *transfer, GAsyncResult *res, gpoint
+       data->clear_step = 1;
+       p.mode = CRFPMOC_FP_MODE_RESET_SENSOR;
+       new_transfer = crfpmoc_ec_transfer_new_cmd (device, CRFPMOC_EC_CMD_FP_MODE, 0,
+-                                                  &p, sizeof (p), 0);
++                                                  &p, sizeof (p),
++                                          sizeof (struct crfpmoc_ec_response_fp_mode));
+       crfpmoc_ec_transfer_submit_cmd (new_transfer, fpi_device_get_cancellable (device),
+                                       crfpmoc_clear_storage_cb, ssm);
+     }
+@@ -1037,19 +1039,11 @@ crfpmoc_init_keys (FpiDeviceCrfpMoc *self)
+   G_STATIC_ASSERT (sizeof (CRFPMOC_DEFAULT_SEED) - 1 == CRFPMOC_FP_CONTEXT_TPM_BYTES);
+   G_STATIC_ASSERT (sizeof (CRFPMOC_DEFAULT_CONTEXT) - 1 == CRFPMOC_FP_CONTEXT_USERID_BYTES);
+ 
+-  if (fpi_device_emulation_mode_enabled (FP_DEVICE (self)))
+-    {
+-      memcpy (self->seed, CRFPMOC_DEFAULT_SEED, sizeof (self->seed));
+-      memcpy (self->context, CRFPMOC_DEFAULT_CONTEXT, sizeof (self->context));
+-    }
+-  else
+-    {
+-      for (size_t i = 0; i < sizeof (self->seed); i++)
+-        self->seed[i] = (guint8) g_random_int_range (0, 256);
+-
+-      for (size_t i = 0; i < sizeof (self->context); i++)
+-        self->context[i] = (guint8) g_random_int_range (0, 256);
+-    }
++  /* Use stable values: the FPMCU seed can only be set once per boot and
++   * stored templates are bound to seed+context, so random per-open values
++   * make previously enrolled prints unusable. */
++  memcpy (self->seed, CRFPMOC_DEFAULT_SEED, sizeof (self->seed));
++  memcpy (self->context, CRFPMOC_DEFAULT_CONTEXT, sizeof (self->context));
+ }
+ 
+ static void
+@@ -1339,7 +1333,8 @@ handle_enroll_reset (FpiSsm *ssm)
+   CrfpMocEcTransfer *transfer;
+ 
+   transfer = crfpmoc_ec_transfer_new_cmd (device, CRFPMOC_EC_CMD_FP_MODE, 0,
+-                                          &p, sizeof (p), 0);
++                                          &p, sizeof (p),
++                                          sizeof (struct crfpmoc_ec_response_fp_mode));
+   crfpmoc_ec_transfer_submit_cmd (transfer, NULL, crfpmoc_ssm_ec_transfer_cb, ssm);
+ }
+ 
+@@ -1611,7 +1606,8 @@ handle_verify_reset (FpiSsm *ssm)
+   CrfpMocEcTransfer *transfer;
+ 
+   transfer = crfpmoc_ec_transfer_new_cmd (device, CRFPMOC_EC_CMD_FP_MODE, 0,
+-                                          &p, sizeof (p), 0);
++                                          &p, sizeof (p),
++                                          sizeof (struct crfpmoc_ec_response_fp_mode));
+   crfpmoc_ec_transfer_submit_cmd (transfer, NULL, crfpmoc_ssm_ec_transfer_cb, ssm);
+ }
+ 
+@@ -1841,7 +1837,8 @@ crfpmoc_clear_storage_run_state (FpiSsm *ssm, FpDevice *device)
+       data->clear_step = 0;
+ 
+       transfer = crfpmoc_ec_transfer_new_cmd (device, CRFPMOC_EC_CMD_FP_MODE, 0,
+-                                              &p, sizeof (p), 0);
++                                              &p, sizeof (p),
++                                          sizeof (struct crfpmoc_ec_response_fp_mode));
+       crfpmoc_ec_transfer_submit_cmd (transfer, fpi_device_get_cancellable (device),
+                                       crfpmoc_clear_storage_cb, ssm);
+       break;
